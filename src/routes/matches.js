@@ -15,7 +15,7 @@ matchRouter.get('/', async (req , res) => {
     if(!parsed.success){
         return res.status(400).json({error: 'Invalid Query Parameters' , details: parsed.error.issues})
     }
-    // res.status(200).json({data : parsed.data})
+    
 
     const limit = Math.min(parsed.data.limit ?? 50 , MAX_LIMIT) // Set a maximum limit to prevent abuse
 
@@ -45,6 +45,12 @@ matchRouter.post('/', async (req , res) => {
             awayScore: awayScore ?? 0,
             status: getMatchStatus(startTime , endTime),
         }).returning()
+
+        if(res.app.locals.broadcastMatchCreated){
+            res.app.locals.broadcastMatchCreated(event);
+        }
+
+
         res.status(201).json({data : event })
     } catch (e) {
         res.status(500).json({error: 'Failed to create match.' , details: JSON.stringify(e)})
