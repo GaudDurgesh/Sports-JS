@@ -14,52 +14,67 @@ function broadcast(wss, payload) {
 }
 
 export function attachWebSocketServer(server) {
-  const wss = new WebSocketServer({ 
-    noServer: true, 
-    path: '/ws', 
-    maxPayload: 1024 * 1024 
+  const wss = new WebSocketServer({
+    noServer: true,
+    path: "/ws",
+    maxPayload: 1024 * 1024,
   });
 
-  // 🔹 REQUIRED when using noServer: true
-  server.on('upgrade', (req, socket, head) => {
-    if (req.url === '/ws') {
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit('connection', ws, req);
-      });
-    } else {
+  // 🔐 Protect BEFORE handshake
+  server.on("upgrade", async (req, socket, head) => {
+    if (req.url !== "/ws") {
       socket.destroy();
+      return;
     }
-  });
 
-  wss.on('connection', async (socket, req) => {
-
-    if (wsArcjet) {
-      try {
+    try {
+      if (wsArcjet) {
         const decision = await wsArcjet.protect(req);
 
         if (decision.isDenied()) {
-          const code = decision.reason.isRateLimit() ? 1013 : 1008;
-          const reason = decision.reason.isRateLimit()
-            ? 'Rate Limit exceeded'
-            : 'Access denied';
+          const isRateLimit = decision.reason.isRateLimit();
 
-          socket.close(code, reason);
+          const statusCode = isRateLimit ? 429 : 403;
+          const statusMessage = isRateLimit
+            ? "Rate Limit exceeded"
+            : "Access denied";
+
+          socket.write(
+            `HTTP/1.1 ${statusCode} ${statusMessage}\r\n` +
+              "Connection: close\r\n" +
+              "Content-Type: text/plain\r\n" +
+              `Content-Length: ${statusMessage.length}\r\n` +
+              "\r\n" +
+              statusMessage
+          );
+
+          socket.destroy();
           return;
         }
-
-      } catch (e) {
-        console.error('WS connection error', e);
-        socket.close(1011, 'Server Security error');
-        return;
       }
+
+      // ✅ If allowed → upgrade
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req);
+      });
+
+    } catch (error) {
+      console.error("Upgrade security error:", error);
+      socket.destroy(); // must destroy raw socket
     }
+  });
 
+  // ✅ No Arcjet logic here anymore
+  wss.on("connection", (socket) => {
     socket.isAlive = true;
-    socket.on('pong', () => { socket.isAlive = true; });
 
-    sendJson(socket, { type: 'welcome' });
+    socket.on("pong", () => {
+      socket.isAlive = true;
+    });
 
-    socket.on('error', console.error);
+    sendJson(socket, { type: "welcome" });
+
+    socket.on("error", console.error);
   });
 
   const interval = setInterval(() => {
@@ -71,10 +86,10 @@ export function attachWebSocketServer(server) {
     });
   }, 30000);
 
-  wss.on('close', () => clearInterval(interval));
+  wss.on("close", () => clearInterval(interval));
 
   function broadcastMatchCreated(match) {
-    broadcast(wss, { type: 'match_created', data: match });
+    broadcast(wss, { type: "match_created", data: match });
   }
 
   return { broadcastMatchCreated };
