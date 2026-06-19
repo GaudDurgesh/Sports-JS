@@ -44,7 +44,7 @@ function TeamCrest({ crest, name, size = 48 }: { crest: string | null; name: str
 
 // ─── Half-time / Full-time score strip ───────────────────────────────────────
 function ScoreStrip({
-  homeTeam, awayTeam, score
+  homeTeam: _homeTeam, awayTeam: _awayTeam, score
 }: {
   homeTeam: string
   awayTeam: string
