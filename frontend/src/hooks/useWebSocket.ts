@@ -1,135 +1,80 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import type { Match, Commentary } from "../types";
-
-interface ScoreUpdate {
-  matchId: number;
-  homeScore: number;
-  awayScore: number;
-}
-
-interface MatchCreatedPayload {
-  matchId: number;
-  match: Match;
-}
-
-interface UseWebSocketOptions {
-  matchId?: number | null;
-  onScoreUpdate?: (update: ScoreUpdate) => void;
-  onCommentary?: (commentary: Commentary) => void;
-  onMatchCreated?: (payload: MatchCreatedPayload) => void;
-}
+import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import type { Match } from "@/types";
 
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
-const MAX_RETRY_DELAY = 30000;
-const BASE_RETRY_DELAY = 1000;
 
-export function useWebSocket({
-  matchId,
-  onScoreUpdate,
-  onCommentary,
-  onMatchCreated,
-}: UseWebSocketOptions) {
-  const [isConnected, setIsConnected] = useState(false);
+interface ScoreUpdate {
+  type: "score_update" | "goal" | "wicket" | string;
+  matchId: string;
+  match?: Match;
+  message?: string;
+}
 
-  const socketRef = useRef<WebSocket | null>(null);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryCountRef = useRef(0);
-  const shouldReconnectRef = useRef(true);
-  const matchIdRef = useRef(matchId);
-
-  const onScoreUpdateRef = useRef(onScoreUpdate);
-  const onCommentaryRef = useRef(onCommentary);
-  const onMatchCreatedRef = useRef(onMatchCreated);
+export function useWebSocket() {
+  const queryClient = useQueryClient();
+  const wsRef = useRef<WebSocket | null>(null);
+  const retryRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
+  const closedRef = useRef(false);
 
   useEffect(() => {
-    onScoreUpdateRef.current = onScoreUpdate;
-    onCommentaryRef.current = onCommentary;
-    onMatchCreatedRef.current = onMatchCreated;
-  });
+    closedRef.current = false;
 
-  const getRetryDelay = useCallback((attempt: number) => {
-    return Math.min(BASE_RETRY_DELAY * Math.pow(2, attempt), MAX_RETRY_DELAY);
-  }, []);
-
-  // No longer depends on matchId — the socket itself is stable
-  // across matchId changes. Reads matchIdRef for the initial subscribe.
-  const connect = useCallback(() => {
-    if (!shouldReconnectRef.current) return;
-
-    const ws = new WebSocket(WS_URL);
-    socketRef.current = ws;
-
-    ws.onopen = () => {
-      retryCountRef.current = 0;
-      setIsConnected(true);
-    };
-
-    ws.onmessage = (event) => {
+    const connect = () => {
+      if (closedRef.current) return;
+      let ws: WebSocket;
       try {
-        const message = JSON.parse(event.data);
-        switch (message.type) {
-          case "welcome":
-            if (matchIdRef.current != null) {
-              ws.send(JSON.stringify({ type: "subscribe", matchId: matchIdRef.current }));
-            }
-            break;
-          case "score_update":
-            onScoreUpdateRef.current?.(message.data);
-            break;
-          case "commentary":
-            onCommentaryRef.current?.(message.data);
-            break;
-          case "match_created":
-            onMatchCreatedRef.current?.(message.data);
-            break;
-        }
+        ws = new WebSocket(WS_URL);
       } catch {
-        console.error("Failed to parse WebSocket message");
+        scheduleReconnect();
+        return;
       }
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        retryRef.current = 0;
+      };
+      ws.onmessage = (evt) => {
+        try {
+          const payload = JSON.parse(evt.data) as ScoreUpdate;
+          if (payload.matchId && payload.match) {
+            queryClient.setQueryData(["match", payload.matchId], payload.match);
+            queryClient.invalidateQueries({ queryKey: ["matches"] });
+          } else if (payload.matchId) {
+            queryClient.invalidateQueries({ queryKey: ["match", payload.matchId] });
+            queryClient.invalidateQueries({ queryKey: ["matches"] });
+          }
+          if (payload.type === "goal") {
+            toast(`⚽ Goal! ${payload.message ?? ""}`);
+          } else if (payload.type === "wicket") {
+            toast(`🏏 Wicket! ${payload.message ?? ""}`);
+          }
+        } catch {
+          /* ignore */
+        }
+      };
+      ws.onclose = () => {
+        if (!closedRef.current) scheduleReconnect();
+      };
+      ws.onerror = () => {
+        ws.close();
+      };
     };
 
-    ws.onclose = () => {
-      setIsConnected(false);
-      socketRef.current = null;
-      if (!shouldReconnectRef.current) return;
-
-      const delay = getRetryDelay(retryCountRef.current);
-      retryCountRef.current += 1;
-      retryTimerRef.current = setTimeout(connect, delay);
+    const scheduleReconnect = () => {
+      const delay = Math.min(30_000, 1000 * 2 ** retryRef.current);
+      retryRef.current += 1;
+      timerRef.current = window.setTimeout(connect, delay);
     };
 
-    ws.onerror = () => ws.close();
-  }, [getRetryDelay]);
-
-  // Socket lifecycle — mount/unmount only
-  useEffect(() => {
-    shouldReconnectRef.current = true;
     connect();
 
     return () => {
-      shouldReconnectRef.current = false;
-      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-      socketRef.current?.close();
+      closedRef.current = true;
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+      wsRef.current?.close();
     };
-  }, [connect]);
-
-  // Subscription lifecycle — runs on matchId change,
-  // sends subscribe/unsubscribe over the EXISTING socket
-  useEffect(() => {
-    matchIdRef.current = matchId;
-
-    const ws = socketRef.current;
-    if (ws?.readyState === WebSocket.OPEN && matchId != null) {
-      ws.send(JSON.stringify({ type: "subscribe", matchId }));
-    }
-
-    return () => {
-      const currentWs = socketRef.current;
-      if (currentWs?.readyState === WebSocket.OPEN && matchId != null) {
-        currentWs.send(JSON.stringify({ type: "unsubscribe", matchId }));
-      }
-    };
-  }, [matchId]);
-
-  return { isConnected };
+  }, [queryClient]);
 }

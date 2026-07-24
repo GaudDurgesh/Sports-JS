@@ -22,6 +22,20 @@
       "when": 1781594589177,
       "tag": "0002_graceful_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784281834107,
+      "tag": "0003_tranquil_magik",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784860757498,
+      "tag": "0004_superb_nuke",
+      "breakpoints": true
     }
   ]
 }

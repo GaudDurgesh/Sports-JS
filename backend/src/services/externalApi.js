@@ -8,6 +8,94 @@ const FOOTBALL_DATA_KEY = process.env.FOOTBALL_DATA_KEY;
 
 const TRACKED_COMPETITIONS = ["WC", "PL", "CL", "PD", "BL1", "SA"];
 
+// Static flag map — Wikimedia SVG flags, freely available
+// Key = exact teamName from Cricbuzz, Value = flag URL
+const CRICKET_FLAGS = {
+  // Full nation names
+  India: "https://upload.wikimedia.org/wikipedia/en/4/41/Flag_of_India.svg",
+  Australia:
+    "https://upload.wikimedia.org/wikipedia/en/b/b9/Flag_of_Australia.svg",
+  England: "https://upload.wikimedia.org/wikipedia/en/b/be/Flag_of_England.svg",
+  Pakistan:
+    "https://upload.wikimedia.org/wikipedia/commons/3/32/Flag_of_Pakistan.svg",
+  "South Africa":
+    "https://upload.wikimedia.org/wikipedia/commons/a/af/Flag_of_South_Africa.svg",
+  "New Zealand":
+    "https://upload.wikimedia.org/wikipedia/commons/3/3e/Flag_of_New_Zealand.svg",
+  "West Indies":
+    "https://upload.wikimedia.org/wikipedia/commons/1/18/WI-flag.svg",
+  "Sri Lanka":
+    "https://upload.wikimedia.org/wikipedia/commons/1/11/Flag_of_Sri_Lanka.svg",
+  Bangladesh:
+    "https://upload.wikimedia.org/wikipedia/commons/f/f9/Flag_of_Bangladesh.svg",
+  Zimbabwe:
+    "https://upload.wikimedia.org/wikipedia/commons/6/6a/Flag_of_Zimbabwe.svg",
+  Afghanistan:
+    "https://upload.wikimedia.org/wikipedia/commons/5/5c/Flag_of_the_Taliban.svg",
+  Ireland:
+    "https://upload.wikimedia.org/wikipedia/commons/4/45/Flag_of_Ireland.svg",
+  Scotland:
+    "https://upload.wikimedia.org/wikipedia/commons/1/10/Flag_of_Scotland.svg",
+  Netherlands:
+    "https://upload.wikimedia.org/wikipedia/commons/2/20/Flag_of_the_Netherlands.svg",
+  Nepal:
+    "https://upload.wikimedia.org/wikipedia/commons/9/9b/Flag_of_Nepal.svg",
+  Oman: "https://upload.wikimedia.org/wikipedia/commons/d/dd/Flag_of_Oman.svg",
+  Uganda:
+    "https://upload.wikimedia.org/wikipedia/commons/4/4e/Flag_of_Uganda.svg",
+  Namibia:
+    "https://upload.wikimedia.org/wikipedia/commons/0/00/Flag_of_Namibia.svg",
+  Kenya:
+    "https://upload.wikimedia.org/wikipedia/commons/4/49/Flag_of_Kenya.svg",
+  Canada:
+    "https://upload.wikimedia.org/wikipedia/commons/d/d9/Flag_of_Canada_%28Pantone%29.svg",
+  USA: "https://upload.wikimedia.org/wikipedia/en/a/a4/Flag_of_the_United_States.svg",
+  "United States of America":
+    "https://upload.wikimedia.org/wikipedia/en/a/a4/Flag_of_the_United_States.svg",
+  UAE: "https://upload.wikimedia.org/wikipedia/commons/c/cb/Flag_of_the_United_Arab_Emirates.svg",
+  "Papua New Guinea":
+    "https://upload.wikimedia.org/wikipedia/commons/e/e3/Flag_of_Papua_New_Guinea.svg",
+  // Franchise / league teams — use competition logo fallback (null is fine)
+  "Mumbai Indians": null,
+  "Chennai Super Kings": null,
+  "Royal Challengers Bengaluru": null,
+  "Kolkata Knight Riders": null,
+  "Delhi Capitals": null,
+  "Sunrisers Hyderabad": null,
+  "Punjab Kings": null,
+  "Rajasthan Royals": null,
+  "Lucknow Super Giants": null,
+  "Gujarat Titans": null,
+  "San Francisco Unicorns": null,
+  "Guyana Amazon Warriors": null,
+  "Trinidad & Tobago Knight Riders": null,
+  "Barbados Royals": null,
+  "Jamaica Tallawahs": null,
+  "Saint Lucia Kings": null,
+  "Antigua and Barbuda Falcons": null,
+  Warwickshire: null,
+  Lancashire: null,
+  Yorkshire: null,
+  Hampshire: null,
+  Surrey: null,
+  Essex: null,
+  Kent: null,
+  Nottinghamshire: null,
+  Derbyshire: null,
+  Middlesex: null,
+};
+
+function getCricketFlag(teamName) {
+  if (!teamName) return null;
+  // Exact match first
+  if (teamName in CRICKET_FLAGS) return CRICKET_FLAGS[teamName];
+  // Partial match — handles "India Women", "Australia U19" etc.
+  for (const [key, url] of Object.entries(CRICKET_FLAGS)) {
+    if (key && teamName.startsWith(key)) return url;
+  }
+  return null;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────
 
 function logFootballFetchError(label, err) {
@@ -26,40 +114,19 @@ function logFootballFetchError(label, err) {
   }
 }
 
-// ─── Cricbuzz normalizer ──────────────────────────────────────────
-// Cricbuzz response structure:
-//   data.typeMatches[].seriesMatches[].seriesAdWrapper.matches[]
-// Each match has matchInfo + matchScore (may be absent for upcoming).
-//
-// matchInfo.team1 = home team (always explicit, no guessing needed)
-// matchInfo.team2 = away team
-// matchScore.team1Score.inngs1 = { runs, wickets, overs }
-// matchScore.team1Score.inngs2 = second innings (Test only)
-// matchInfo.state: "In Progress" | "Complete" | "Preview" | "Stumps" | "Lunch" etc.
-
 function normalizeCricketMatch(matchInfo, matchScore) {
   const homeTeam = matchInfo.team1?.teamName ?? "TBD";
   const awayTeam = matchInfo.team2?.teamName ?? "TBD";
 
-  // state drives status — anything that isn't Complete or Preview is live
   const state = matchInfo.state ?? "";
   let status = "scheduled";
   if (state === "Complete") status = "finished";
   else if (state !== "Preview" && state !== "") status = "live";
 
-  // Build innings array stored in metadata.
-  // Cricbuzz separates scores by team (team1Score/team2Score) and by
-  // innings number (inngs1/inngs2). We flatten into the same shape
-  // the frontend already expects: [{ label, runs, wickets, overs }]
-  // Label format: "<teamName> Inning <n>" — same pattern as CricAPI
-  // so CricketScorecard and sumCricketRuns work unchanged.
   const innings = [];
   const t1 = matchScore?.team1Score ?? {};
   const t2 = matchScore?.team2Score ?? {};
 
-  // inngs1 = first innings of that team, inngs2 = second (Test)
-  // Order: team1 inn1, team2 inn1, team1 inn2, team2 inn2
-  // (chronological batting order for a standard Test)
   for (const [teamName, teamScore] of [
     [homeTeam, t1],
     [awayTeam, t2],
@@ -78,8 +145,6 @@ function normalizeCricketMatch(matchInfo, matchScore) {
     }
   }
 
-  // homeScore / awayScore = sum of all innings runs for each team
-  // (used on match cards and as a quick snapshot)
   const homeScore = innings
     .filter((i) => i.label.startsWith(homeTeam))
     .reduce((s, i) => s + i.runs, 0);
@@ -87,10 +152,23 @@ function normalizeCricketMatch(matchInfo, matchScore) {
     .filter((i) => i.label.startsWith(awayTeam))
     .reduce((s, i) => s + i.runs, 0);
 
-  // startDate from Cricbuzz is epoch ms as a string
   const startTime = matchInfo.startDate
     ? new Date(Number(matchInfo.startDate))
     : new Date();
+  const homeInnings = innings.filter((i) => i.label.startsWith(homeTeam));
+  const awayInnings = innings.filter((i) => i.label.startsWith(awayTeam));
+  const homeWickets =
+    homeInnings.length > 0
+      ? (homeInnings[homeInnings.length - 1].wickets ?? null)
+      : null;
+  const awayWickets =
+    awayInnings.length > 0
+      ? (awayInnings[awayInnings.length - 1].wickets ?? null)
+      : null;
+
+  // Current overs (from the last innings)
+  const lastInnings = innings[innings.length - 1];
+  const currentOvers = lastInnings?.overs ?? null;
 
   return {
     externalId: `cb-${matchInfo.matchId}`,
@@ -99,6 +177,8 @@ function normalizeCricketMatch(matchInfo, matchScore) {
     awayTeam,
     homeScore,
     awayScore,
+    homeWickets,
+    awayWickets,
     status,
     startTime,
     endTime: status === "finished" ? startTime : null,
@@ -106,19 +186,16 @@ function normalizeCricketMatch(matchInfo, matchScore) {
       matchType: matchInfo.matchFormat?.toLowerCase() ?? null,
       venue: matchInfo.venueName ?? null,
       series: matchInfo.seriesName ?? null,
+      toss: matchInfo.tossWinner
+        ? `${matchInfo.tossWinner} chose to ${matchInfo.tossChoice?.toLowerCase() ?? "bat"}`
+        : null,
+      currentOvers,
       innings,
+      homeTeamFlag: getCricketFlag(homeTeam),
+      awayTeamFlag: getCricketFlag(awayTeam),
     },
   };
 }
-
-// ─── Cricbuzz fetcher ─────────────────────────────────────────────
-// Single call to /matches/v1/live fetches ALL live+recent matches.
-// We also call /matches/v1/recent in the same request batch to catch
-// matches that finished between syncs. Both count toward the 200/month limit.
-// Total: 2 calls per sync cycle. At 4-hour intervals = 2×(30×24/4) = 360/month
-// — too many. So we use ONLY /matches/v1/live which also includes recently
-// completed matches in the "Complete" state. 1 call per cycle.
-// At 4-hour intervals: 1×(30×24/4) = 180 calls/month — within limit.
 
 export async function fetchLiveCricketMatches() {
   try {
@@ -185,6 +262,19 @@ function normalizeFootballDataMatch(match) {
     status: statusMap[match.status] ?? "scheduled",
     startTime: new Date(match.utcDate),
     endTime: match.status === "FINISHED" ? new Date(match.utcDate) : null,
+    // ─── Competition metadata ─────────────────────────────────────
+    // Stored in the matches.metadata JSONB column.
+    // Required by: /standings, /leagues/:code/fixtures, StandingsWidget, LeaguePage.
+    metadata: {
+      competitionCode: match.competition?.code ?? null,
+      competitionName: match.competition?.name ?? null,
+      competitionEmblem: match.competition?.emblem ?? null,
+      matchday: match.matchday ?? null,
+      stage: match.stage ?? null,
+      homeTeamCrest: match.homeTeam?.crest ?? null,
+      awayTeamCrest: match.awayTeam?.crest ?? null,
+      minute: match.score?.duration === "REGULAR" ? null : null, // filled by live sync
+    },
   };
 }
 
@@ -197,16 +287,28 @@ export async function fetchLiveFootballMatches() {
       .toISOString()
       .split("T")[0];
 
-    const { data } = await axios.get(`${FOOTBALL_DATA_BASE}/matches`, {
-      headers: { "X-Auth-Token": FOOTBALL_DATA_KEY },
-      params: {
-        status: "IN_PLAY,PAUSED,FINISHED",
-        dateFrom: yesterday,
-        dateTo: today,
-      },
-      timeout: 10_000,
-    });
-    return (data.matches ?? []).map(normalizeFootballDataMatch);
+    const requests = TRACKED_COMPETITIONS.map((code) =>
+      axios
+        .get(`${FOOTBALL_DATA_BASE}/competitions/${code}/matches`, {
+          headers: { "X-Auth-Token": FOOTBALL_DATA_KEY },
+          params: {
+            status: "IN_PLAY,PAUSED,FINISHED",
+            dateFrom: yesterday,
+            dateTo: today,
+          },
+          timeout: 10_000,
+        })
+        .then((r) => r.data.matches ?? [])
+        .catch((err) => {
+          logFootballFetchError(`football-live:${code}`, err);
+          return [];
+        }),
+    );
+
+    const results = await Promise.all(requests);
+    const flat = results.flat().map(normalizeFootballDataMatch);
+    console.log(`[football-live] fetched ${flat.length} matches`);
+    return flat;
   } catch (err) {
     logFootballFetchError("football-live", err);
     return [];
@@ -224,7 +326,11 @@ export async function fetchScheduledFootballMatches() {
       axios
         .get(`${FOOTBALL_DATA_BASE}/competitions/${code}/matches`, {
           headers: { "X-Auth-Token": FOOTBALL_DATA_KEY },
-          params: { status: "SCHEDULED,TIMED", dateFrom: today, dateTo: tomorrow },
+          params: {
+            status: "SCHEDULED,TIMED",
+            dateFrom: today,
+            dateTo: tomorrow,
+          },
           timeout: 10_000,
         })
         .then((r) => r.data.matches ?? [])

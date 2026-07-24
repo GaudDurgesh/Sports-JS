@@ -9,7 +9,7 @@ const MAX_LIMIT = 100;
 
 export const commentaryRouter = Router({ mergeParams: true });
 
-commentaryRouter.get('/', async (req, res) => {
+commentaryRouter.get('/:id/commentary', async (req, res) => {
     const paramsResult = matchIdParamSchema.safeParse(req.params);
 
     if (!paramsResult.success) {
@@ -41,7 +41,7 @@ commentaryRouter.get('/', async (req, res) => {
     }
 });
 
-commentaryRouter.post('/', async (req, res) => {
+commentaryRouter.post('/:id/events', async (req, res) => {
     const paramsResult = matchIdParamSchema.safeParse(req.params);
 
     if (!paramsResult.success) {

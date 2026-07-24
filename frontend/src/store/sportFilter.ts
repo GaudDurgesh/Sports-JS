@@ -1,12 +1,13 @@
-import { create } from 'zustand'
-import type { Sport } from '../types'
+import { create } from "zustand";
 
-type StoreType = {
-  activeSport: Sport
-  setActiveSport: (sport: Sport) => void
+export type SportFilter = "all" | "cricket" | "football";
+
+interface SportFilterState {
+  filter: SportFilter;
+  setFilter: (f: SportFilter) => void;
 }
 
-export const useSportStore = create<StoreType>()((set) => ({
-  activeSport: 'all', // or whatever default Sport value you want
-  setActiveSport: (sport) => set({ activeSport: sport }),
-}))
+export const useSportFilter = create<SportFilterState>((set) => ({
+  filter: "all",
+  setFilter: (filter) => set({ filter }),
+}));

@@ -1,6 +1,3 @@
-import AgentAPI from 'apminsight';
-AgentAPI.config()
-
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
@@ -10,6 +7,8 @@ import { securityMiddleware } from './arcjet.js';
 import { commentaryRouter } from './routes/commentary.js';
 import { startSyncJob } from './services/syncJob.js';
 import { eventsRouter } from './routes/events.js'
+import { authRouter } from './routes/authRoute.js';
+import competitionsRouter from './routes/competitions.js';
 
 const PORT = Number(process.env.PORT || 8000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -23,7 +22,7 @@ app.use(express.json());
 // Locally VITE runs on localhost:5173; in production set CORS_ORIGIN=https://your-app.vercel.app
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-  : ['http://localhost:5173']
+  : ['http://localhost:5173','http://localhost:8080']
 
 app.use(cors({
   origin: allowedOrigins,
@@ -33,11 +32,15 @@ app.use(cors({
 
 app.get('/', (req, res) => res.send('ScoreBoard JS API'));
 
-// app.use(securityMiddleware());
+app.use('/auth/login', securityMiddleware());
+app.use('/auth/signup', securityMiddleware());
+app.use('/auth', authRouter);
 
 app.use('/matches', matchRouter);
-app.use('/matches/:id/commentary', commentaryRouter);
-app.use('/matches/:id/events', eventsRouter)
+app.use('/matches', commentaryRouter);
+app.use('/matches', eventsRouter);
+app.use('/competitions', competitionsRouter);
+console.log('competitions router mounted');
 
 // 1. Attach WebSocket FIRST — this creates the broadcast functions
 const { broadcastMatchCreated, broadcastCommentary, broadcastScoreUpdate } = attachWebSocketServer(server);
