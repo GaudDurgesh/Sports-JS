@@ -9,6 +9,7 @@ import { startSyncJob } from './services/syncJob.js';
 import { eventsRouter } from './routes/events.js'
 import { authRouter } from './routes/authRoute.js';
 import competitionsRouter from './routes/competitions.js';
+import 'dotenv/config';
 
 const PORT = Number(process.env.PORT || 8000);
 const HOST = process.env.HOST || '0.0.0.0';
