@@ -37,6 +37,19 @@ app.use('/auth/login', securityMiddleware());
 app.use('/auth/signup', securityMiddleware());
 app.use('/auth', authRouter);
 
+
+// Public visitors can read scores, but cannot modify match data.
+// Admin-only writes will be enabled after authorization is implemented.
+const blockPublicMatchWrite = (req, res) => {
+  return res.status(403).json({
+    error: "Match data changes are currently disabled.",
+  });
+};
+
+app.post('/matches', blockPublicMatchWrite);
+app.put('/matches/:id/score', blockPublicMatchWrite);
+app.post('/matches/:id/events', blockPublicMatchWrite);
+
 app.use('/matches', matchRouter);
 app.use('/matches', commentaryRouter);
 app.use('/matches', eventsRouter);
