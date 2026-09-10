@@ -1,18 +1,7 @@
 import express from "express";
-import axios from "axios";
+import { footballGet } from "../services/footballClient.js";
 
 const router = express.Router();
-
-const API_KEY = process.env.FOOTBALL_DATA_KEY;
-if (!API_KEY) {
-  throw new Error("FOOTBALL_DATA_KEY environment variable is required.");
-}
-
-const footballAPI = axios.create({
-  baseURL: "https://api.football-data.org/v4",
-  timeout: 10000,
-  headers: { "X-Auth-Token": API_KEY },
-});
 
 // ── Static list — no API call needed ────────────────────────────────────────
 const TRACKED_COMPETITIONS = [
@@ -61,7 +50,7 @@ async function fetchWithCache(endpoint, cacheKey, ttlMs, res) {
   if (cached) return res.status(200).json({ data: cached });
 
   try {
-    const { data } = await footballAPI.get(endpoint);
+    const { data } = await footballGet(endpoint);
     setCached(cacheKey, data, ttlMs);
     return res.status(200).json({ data });
   } catch (err) {

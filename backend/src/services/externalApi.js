@@ -1,10 +1,8 @@
 import axios from "axios";
+import { footballGet } from "./footballClient.js";
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_CRICKET_HOST = "cricbuzz-cricket.p.rapidapi.com";
-
-const FOOTBALL_DATA_BASE = "https://api.football-data.org/v4";
-const FOOTBALL_DATA_KEY = process.env.FOOTBALL_DATA_KEY;
 
 const TRACKED_COMPETITIONS = ["WC", "PL", "CL", "PD", "BL1", "SA"];
 
@@ -288,16 +286,11 @@ export async function fetchLiveFootballMatches() {
       .split("T")[0];
 
     const requests = TRACKED_COMPETITIONS.map((code) =>
-      axios
-        .get(`${FOOTBALL_DATA_BASE}/competitions/${code}/matches`, {
-          headers: { "X-Auth-Token": FOOTBALL_DATA_KEY },
-          params: {
-            status: "IN_PLAY,PAUSED,FINISHED",
-            dateFrom: yesterday,
-            dateTo: today,
-          },
-          timeout: 10_000,
-        })
+      footballGet(`/competitions/${code}/matches`, {
+        status: "IN_PLAY,PAUSED,FINISHED",
+        dateFrom: yesterday,
+        dateTo: today,
+      })
         .then((r) => r.data.matches ?? [])
         .catch((err) => {
           logFootballFetchError(`football-live:${code}`, err);
@@ -323,16 +316,11 @@ export async function fetchScheduledFootballMatches() {
       .split("T")[0];
 
     const requests = TRACKED_COMPETITIONS.map((code) =>
-      axios
-        .get(`${FOOTBALL_DATA_BASE}/competitions/${code}/matches`, {
-          headers: { "X-Auth-Token": FOOTBALL_DATA_KEY },
-          params: {
-            status: "SCHEDULED,TIMED",
-            dateFrom: today,
-            dateTo: tomorrow,
-          },
-          timeout: 10_000,
-        })
+      footballGet(`/competitions/${code}/matches`, {
+        status: "SCHEDULED,TIMED",
+        dateFrom: today,
+        dateTo: tomorrow,
+      })
         .then((r) => r.data.matches ?? [])
         .catch((err) => {
           logFootballFetchError(`football-schedule:${code}`, err);

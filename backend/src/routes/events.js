@@ -2,12 +2,9 @@ import { Router } from "express";
 import { db } from "../db/db.js";
 import { matches } from "../db/schema.js";
 import { eq } from "drizzle-orm";
-import axios from "axios";
+import { footballGet } from "../services/footballClient.js";
 
 export const eventsRouter = Router({ mergeParams: true });
-
-const FOOTBALL_DATA_BASE = "https://api.football-data.org/v4";
-const FOOTBALL_DATA_KEY = process.env.FOOTBALL_DATA_KEY;
 
 // In-memory cache — finished matches never change, no point re-fetching
 // Key: internal match id, Value: { data, cachedAt }
@@ -64,13 +61,7 @@ eventsRouter.get("/:id/events", async (req, res) => {
     }
 
     // 5. Fetch from football-data.org
-    const { data } = await axios.get(
-      `${FOOTBALL_DATA_BASE}/matches/${footballId}`,
-      {
-        headers: { "X-Auth-Token": FOOTBALL_DATA_KEY },
-        timeout: 8_000,
-      },
-    );
+    const { data } = await footballGet(`/matches/${footballId}`);
 
     // 6. Shape the response — only what the frontend needs
     const result = {
