@@ -108,6 +108,15 @@ eventsRouter.get("/:id/events", async (req, res) => {
     cache.set(matchId, { data: result, cachedAt: Date.now() });
     res.json({ data: result, cached: false });
   } catch (err) {
+    if (err.code === "FOOTBALL_QUEUE_FULL") {
+      res.set("Retry-After", "30");
+
+      return res.status(503).json({
+        error: "Football data is temporarily busy. Please try again shortly.",
+        code: "FOOTBALL_QUEUE_FULL",
+      });
+    }
+
     if (err.response?.status === 404) {
       return res
         .status(404)
