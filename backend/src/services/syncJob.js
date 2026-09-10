@@ -188,7 +188,8 @@ async function syncFootballSchedule(
 // Football schedule : every 15 min
 
 const CRICKET_INTERVAL_MS = 4 * 60 * 60_000; // 4 hours
-const FOOTBALL_LIVE_MS = 30_000; // 30 seconds
+// Poll every 2 minutes while shared provider throttling is implemented.
+const FOOTBALL_LIVE_MS = 2 * 60_000;
 const FOOTBALL_SCHEDULE_MS = 15 * 60_000; // 15 minutes
 
 export function startSyncJob({ broadcastScoreUpdate, broadcastMatchCreated }) {
