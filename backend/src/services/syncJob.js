@@ -199,9 +199,9 @@ export function startSyncJob({ broadcastScoreUpdate, broadcastMatchCreated }) {
   syncCricket(...args);
   syncFootballLive(...args);
   syncFootballSchedule(...args);
-  cleanupStaleMatches();
 
-  const cleanupTimer = setInterval(() => cleanupStaleMatches(), 60 * 60_000);
+
+  
   const cricketTimer = setInterval(
     () => syncCricket(...args),
     CRICKET_INTERVAL_MS,
@@ -220,6 +220,5 @@ export function startSyncJob({ broadcastScoreUpdate, broadcastMatchCreated }) {
     clearInterval(cricketTimer);
     clearInterval(footballLiveTimer);
     clearInterval(footballScheduleTimer);
-    clearInterval(cleanupTimer);
   };
 }
