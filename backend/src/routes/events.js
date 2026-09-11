@@ -11,12 +11,24 @@ export const eventsRouter = Router({ mergeParams: true });
 // Key: internal match id, Value: { data, cachedAt }
 const cache = new Map();
 const CACHE_TTL_LIVE = 30_000; // 30s for live matches
-const CACHE_TTL_FINISHED = Infinity; // forever for finished matches
+const CACHE_TTL_FINISHED = 6 * 60 * 60_000; // 6 hours
+const CACHE_TTL_UNAVAILABLE = 5 * 60_000; // 5 minutes
 
 function isCacheValid(entry, isFinished) {
   if (!entry) return false;
-  if (isFinished) return true; // finished matches cached forever
-  return Date.now() - entry.cachedAt < CACHE_TTL_LIVE;
+
+  // Refresh once when a match first becomes finished.
+  if (entry.isFinished !== isFinished) return false;
+
+  const hasMissingCoverage = entry.data.coverage !== "complete";
+
+  const ttl = isFinished
+    ? hasMissingCoverage
+      ? CACHE_TTL_UNAVAILABLE
+      : CACHE_TTL_FINISHED
+    : CACHE_TTL_LIVE;
+
+  return Date.now() - entry.cachedAt < ttl;
 }
 
 // GET /matches/:id/events
@@ -75,7 +87,8 @@ eventsRouter.get("/:id/events", async (req, res) => {
     const result = normalizeFootballEvents(data, matchId);
 
     // 7. Cache and return
-    cache.set(matchId, { data: result, cachedAt: Date.now() });
+    cache.set(matchId, { data: result, cachedAt: Date.now(), isFinished });
+
     return res.json({
       data: result.events,
       meta: {
