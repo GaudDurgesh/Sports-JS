@@ -52,7 +52,6 @@ export interface MatchMetadata {
   [key: string]: unknown;
 }
 
-
 export interface Match {
   id: string;
   sport: Sport;
@@ -68,15 +67,33 @@ export interface Match {
   metadata?: MatchMetadata;
 }
 
+export type EventCoverage = "complete" | "partial" | "unavailable";
+
+export interface FootballEventMetadata {
+  addedTime?: number | null;
+  providerType?: string | null;
+  card?: string | null;
+  assist?: string | null;
+  [key: string]: unknown;
+}
 
 export interface FootballEvent {
   id: string;
-  minute: number;
-  type: "goal" | "yellow_card" | "red_card" | "substitution" | string;
+  minute: number | null;
+  type: "goal" | "yellow_card" | "red_card" | "booking" | "substitution" | string;
   actor: string;
   team: "home" | "away" | string;
-  message?: string;
-  metadata?: Record<string, unknown>;
+  message?: string | null;
+  metadata?: FootballEventMetadata | null;
+}
+
+export interface MatchEventsResponse {
+  data: FootballEvent[];
+  meta: {
+    coverage: EventCoverage;
+    unavailable: string[];
+  };
+  cached: boolean;
 }
 
 export interface User {
