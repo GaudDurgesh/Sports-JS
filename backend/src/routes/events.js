@@ -3,6 +3,7 @@ import { db } from "../db/db.js";
 import { matches } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { footballGet } from "../services/footballClient.js";
+import { normalizeFootballEvents } from "../services/normalizeFootballEvents.js";
 
 export const eventsRouter = Router({ mergeParams: true });
 
@@ -21,7 +22,7 @@ function isCacheValid(entry, isFinished) {
 // GET /matches/:id/events
 eventsRouter.get("/:id/events", async (req, res) => {
   const matchId = Number(req.params.id);
-  if (isNaN(matchId)) {
+  if (!Number.isSafeInteger(matchId) || matchId <= 0) {
     return res.status(400).json({ error: "Invalid match ID" });
   }
 
@@ -57,56 +58,32 @@ eventsRouter.get("/:id/events", async (req, res) => {
     // 4. Check cache first
     const cached = cache.get(matchId);
     if (isCacheValid(cached, isFinished)) {
-      return res.json({ data: cached.data, cached: true });
+      return res.json({
+        data: cached.data.events,
+        meta: {
+          coverage: cached.data.coverage,
+          unavailable: cached.data.unavailable,
+        },
+        cached: true,
+      });
     }
 
     // 5. Fetch from football-data.org
     const { data } = await footballGet(`/matches/${footballId}`);
 
     // 6. Shape the response — only what the frontend needs
-    const result = {
-      competition: {
-        name: data.competition?.name ?? null,
-        emblem: data.competition?.emblem ?? null,
-      },
-      homeTeam: {
-        name: data.homeTeam?.name ?? match.homeTeam,
-        shortName: data.homeTeam?.shortName ?? match.homeTeam,
-        crest: data.homeTeam?.crest ?? null,
-      },
-      awayTeam: {
-        name: data.awayTeam?.name ?? match.awayTeam,
-        shortName: data.awayTeam?.shortName ?? match.awayTeam,
-        crest: data.awayTeam?.crest ?? null,
-      },
-      score: {
-        fullTime: data.score?.fullTime ?? { home: null, away: null },
-        halfTime: data.score?.halfTime ?? { home: null, away: null },
-      },
-      goals: (data.goals ?? []).map((g) => ({
-        minute: g.minute,
-        team: g.team?.shortName ?? g.team?.name ?? null,
-        scorer: g.scorer?.name ?? null,
-        assist: g.assist?.name ?? null,
-        type: g.type ?? "REGULAR", // REGULAR, OWN_GOAL, PENALTY
-      })),
-      bookings: (data.bookings ?? []).map((b) => ({
-        minute: b.minute,
-        team: b.team?.shortName ?? b.team?.name ?? null,
-        player: b.player?.name ?? null,
-        card: b.card, // 'YELLOW' or 'RED'
-      })),
-      substitutions: (data.substitutions ?? []).map((s) => ({
-        minute: s.minute,
-        team: s.team?.shortName ?? s.team?.name ?? null,
-        playerOut: s.playerOut?.name ?? null,
-        playerIn: s.playerIn?.name ?? null,
-      })),
-    };
+    const result = normalizeFootballEvents(data, matchId);
 
     // 7. Cache and return
     cache.set(matchId, { data: result, cachedAt: Date.now() });
-    res.json({ data: result, cached: false });
+    return res.json({
+      data: result.events,
+      meta: {
+        coverage: result.coverage,
+        unavailable: result.unavailable,
+      },
+      cached: false,
+    });
   } catch (err) {
     if (err.code === "FOOTBALL_QUEUE_FULL") {
       res.set("Retry-After", "30");
