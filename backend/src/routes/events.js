@@ -13,6 +13,8 @@ const cache = new Map();
 const CACHE_TTL_LIVE = 30_000; // 30s for live matches
 const CACHE_TTL_FINISHED = 6 * 60 * 60_000; // 6 hours
 const CACHE_TTL_UNAVAILABLE = 5 * 60_000; // 5 minutes
+const inFlight = new Map();
+const cacheWriters = new Map();
 
 function isCacheValid(entry, isFinished) {
   if (!entry) return false;
@@ -29,6 +31,43 @@ function isCacheValid(entry, isFinished) {
     : CACHE_TTL_LIVE;
 
   return Date.now() - entry.cachedAt < ttl;
+}
+
+function fetchAndCacheEvents(matchId, footballId, isFinished) {
+  const key = `${matchId}:${footballId}:${isFinished}`;
+
+  const existing = inFlight.get(key);
+  if (existing) return existing;
+
+  // Only the latest newly started fetch may write this match's cache.
+  const token = {};
+  cacheWriters.set(matchId, token);
+
+  const request = (async () => {
+    const { data } = await footballGet(`/matches/${footballId}`);
+    const result = normalizeFootballEvents(data, matchId);
+
+    if (cacheWriters.get(matchId) === token) {
+      cache.set(matchId, {
+        data: result,
+        cachedAt: Date.now(),
+        isFinished,
+      });
+    }
+
+    return result;
+  })();
+
+  const tracked = request.finally(() => {
+    inFlight.delete(key);
+
+    if (cacheWriters.get(matchId) === token) {
+      cacheWriters.delete(matchId);
+    }
+  });
+
+  inFlight.set(key, tracked);
+  return tracked;
 }
 
 // GET /matches/:id/events
@@ -80,14 +119,7 @@ eventsRouter.get("/:id/events", async (req, res) => {
       });
     }
 
-    // 5. Fetch from football-data.org
-    const { data } = await footballGet(`/matches/${footballId}`);
-
-    // 6. Shape the response — only what the frontend needs
-    const result = normalizeFootballEvents(data, matchId);
-
-    // 7. Cache and return
-    cache.set(matchId, { data: result, cachedAt: Date.now(), isFinished });
+    const result = await fetchAndCacheEvents(matchId, footballId, isFinished);
 
     return res.json({
       data: result.events,
