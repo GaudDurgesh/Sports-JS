@@ -30,7 +30,18 @@ async function upsertMatch(
     throw new Error("Match startTime must be a valid Date");
   }
 
+  const providerUpdatedAt = normalized.providerUpdatedAt ?? null;
+
+  if (
+    providerUpdatedAt !== null &&
+    (!(providerUpdatedAt instanceof Date) ||
+      !Number.isFinite(providerUpdatedAt.getTime()))
+  ) {
+    throw new Error("Provider timestamp must be a valid Date or null");
+  }
+
   const values = {
+    providerUpdatedAt,
     sport: normalized.sport,
     homeTeam: normalized.homeTeam,
     awayTeam: normalized.awayTeam,
@@ -43,6 +54,15 @@ async function upsertMatch(
     endTime: normalized.endTime ?? null,
     metadata: normalized.metadata ?? null,
   };
+
+  const freshnessAllowed =
+    providerUpdatedAt === null
+      ? sql`${matches.providerUpdatedAt} IS NULL`
+      : sql`(
+        ${matches.providerUpdatedAt} IS NULL
+        OR ${matches.providerUpdatedAt} <
+          ${sql.param(providerUpdatedAt, matches.providerUpdatedAt)}
+      )`;
 
   const [inserted] = await db
     .insert(matches)
@@ -78,7 +98,13 @@ async function upsertMatch(
       ...values,
       updatedAt: new Date(),
     })
-    .where(and(eq(matches.externalId, normalized.externalId), changed))
+    .where(
+      and(
+        eq(matches.externalId, normalized.externalId),
+        freshnessAllowed,
+        changed,
+      ),
+    )
     .returning();
 
   if (!updated) return;

@@ -43,6 +43,7 @@ try {
       status text NOT NULL,
       start_time timestamptz NOT NULL,
       end_time timestamptz,
+      provider_updated_at timestamptz,
       home_score integer NOT NULL DEFAULT 0,
       away_score integer NOT NULL DEFAULT 0,
       home_wickets integer,
@@ -65,7 +66,11 @@ try {
   const context = vm.createContext({
     db: drizzle(client),
     matches,
-    eq, or, and, sql, Date,
+    eq,
+    or,
+    and,
+    sql,
+    Date,
   });
 
   vm.runInContext(
@@ -136,12 +141,116 @@ try {
   await run(moved);
   assert.deepEqual(notifications, ["updated"]);
 
-  const { rows } = await client.query(
-    "SELECT * FROM pg_temp.matches",
-  );
+  const { rows } = await client.query("SELECT * FROM pg_temp.matches");
   assert.equal(rows.length, 1);
   assert.equal(rows[0].start_time.toISOString(), moved.startTime.toISOString());
   console.log("PASS: rescheduled time persists; one row per external ID");
+
+  const olderTime = new Date("2026-09-12T10:00:00Z");
+  const initialTime = new Date("2026-09-12T11:00:00Z");
+  const newerTime = new Date("2026-09-12T12:00:00Z");
+
+  const football = {
+    ...base,
+    externalId: "fd-test-freshness",
+    sport: "football",
+    homeScore: 1,
+    awayScore: 0,
+    homeWickets: null,
+    awayWickets: null,
+    providerUpdatedAt: initialTime,
+  };
+
+  async function storedFootball() {
+    const result = await client.query(
+      `SELECT home_score, provider_updated_at
+       FROM pg_temp.matches
+       WHERE external_id = $1`,
+      [football.externalId],
+    );
+    return result.rows[0];
+  }
+
+  await run(football);
+  assert.deepEqual(notifications, ["created"]);
+  assert.equal(
+    (await storedFootball()).provider_updated_at.toISOString(),
+    initialTime.toISOString(),
+  );
+
+  // Older, equal, and missing timestamps cannot overwrite this row.
+  for (const timestamp of [olderTime, initialTime, null]) {
+    await run({
+      ...football,
+      homeScore: 9,
+      providerUpdatedAt: timestamp,
+    });
+
+    assert.deepEqual(notifications, []);
+    const stored = await storedFootball();
+    assert.equal(stored.home_score, 1);
+    assert.equal(
+      stored.provider_updated_at.toISOString(),
+      initialTime.toISOString(),
+    );
+  }
+  console.log("PASS: older, equal and missing timestamps cannot overwrite");
+
+  // A newer provider correction may legitimately reduce a score.
+  await run({
+    ...football,
+    homeScore: 0,
+    providerUpdatedAt: newerTime,
+  });
+  assert.deepEqual(notifications, ["updated"]);
+  assert.equal((await storedFootball()).home_score, 0);
+  console.log("PASS: newer timestamp permits a downward score correction");
+
+  // Even with unchanged scores, advance the stored provider timestamp.
+  const latestTime = new Date("2026-09-12T13:00:00Z");
+  await run({
+    ...football,
+    homeScore: 0,
+    providerUpdatedAt: latestTime,
+  });
+  assert.equal(
+    (await storedFootball()).provider_updated_at.toISOString(),
+    latestTime.toISOString(),
+  );
+
+  await run({
+    ...football,
+    homeScore: 8,
+    providerUpdatedAt: newerTime,
+  });
+  assert.deepEqual(notifications, []);
+  assert.equal((await storedFootball()).home_score, 0);
+  console.log("PASS: timestamp advances even when scores are unchanged");
+
+  // Existing rows without provider timestamps can acquire one.
+  const legacy = {
+    ...football,
+    externalId: "fd-test-legacy",
+    providerUpdatedAt: null,
+  };
+  await run(legacy);
+  await run({
+    ...legacy,
+    providerUpdatedAt: initialTime,
+  });
+  assert.deepEqual(notifications, ["updated"]);
+
+  const legacyResult = await client.query(
+    `SELECT provider_updated_at
+     FROM pg_temp.matches
+     WHERE external_id = $1`,
+    [legacy.externalId],
+  );
+  assert.equal(
+    legacyResult.rows[0].provider_updated_at.toISOString(),
+    initialTime.toISOString(),
+  );
+  console.log("PASS: legacy row accepts its first provider timestamp");
 } finally {
   try {
     await client.query("ROLLBACK");

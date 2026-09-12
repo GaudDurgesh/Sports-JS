@@ -36,6 +36,9 @@ export const matches = pgTable("matches", {
   awayWickets: integer("away_wickets"),
   metadata: jsonb("metadata"),
   externalId: text("external_id").unique(),
+  providerUpdatedAt: timestamp("provider_updated_at", {
+  withTimezone: true,
+}),
 
   // Server-generated timestamps — plain timestamp is fine here
   createdAt: timestamp("created_at").defaultNow().notNull(),

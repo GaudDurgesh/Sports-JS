@@ -250,8 +250,19 @@ function normalizeFootballDataMatch(match) {
   const awayScore =
     match.score?.fullTime?.away ?? match.score?.halfTime?.away ?? 0;
 
+  const parsedUpdatedAt =
+    typeof match.lastUpdated === "string" && match.lastUpdated.trim() !== ""
+      ? new Date(match.lastUpdated)
+      : null;
+
+  const providerUpdatedAt =
+    parsedUpdatedAt && Number.isFinite(parsedUpdatedAt.getTime())
+      ? parsedUpdatedAt
+      : null;
+
   return {
     externalId: `fd-${match.id}`,
+    providerUpdatedAt,
     sport: "football",
     homeTeam: match.homeTeam?.shortName ?? match.homeTeam?.name ?? "TBD",
     awayTeam: match.awayTeam?.shortName ?? match.awayTeam?.name ?? "TBD",
