@@ -1,6 +1,6 @@
 import { db } from "../db/db.js";
 import { matches } from "../db/schema.js";
-import { eq, or, and, lt } from "drizzle-orm";
+import { eq, or, and, lt, sql } from "drizzle-orm";
 import {
   fetchLiveCricketMatches,
   fetchLiveFootballMatches,
@@ -16,66 +16,79 @@ async function upsertMatch(
   broadcastScoreUpdate,
   broadcastMatchCreated,
 ) {
-  const existing = await db
-    .select()
-    .from(matches)
-    .where(eq(matches.externalId, normalized.externalId))
-    .limit(1);
-
-  if (existing.length > 0) {
-    const current = existing[0];
-
-    const scoreChanged =
-      current.homeScore !== normalized.homeScore ||
-      current.awayScore !== normalized.awayScore;
-    const wicketsChanged =
-      (current.homeWickets ?? null) !== (normalized.homeWickets ?? null) ||
-      (current.awayWickets ?? null) !== (normalized.awayWickets ?? null);
-    const statusChanged = current.status !== normalized.status;
-    const teamsChanged =
-      current.homeTeam !== normalized.homeTeam ||
-      current.awayTeam !== normalized.awayTeam;
-    const metadataChanged =
-      JSON.stringify(current.metadata) !== JSON.stringify(normalized.metadata);
-
-    if (
-      scoreChanged ||
-      wicketsChanged ||
-      statusChanged ||
-      teamsChanged ||
-      metadataChanged
-    ) {
-      await db
-        .update(matches)
-        .set({
-          homeTeam: normalized.homeTeam,
-          awayTeam: normalized.awayTeam,
-          homeScore: normalized.homeScore,
-          awayScore: normalized.awayScore,
-          homeWickets: normalized.homeWickets ?? null, // ← add
-          awayWickets: normalized.awayWickets ?? null, // ← add
-          status: normalized.status,
-          endTime: normalized.endTime,
-          metadata: normalized.metadata ?? null,
-          updatedAt: new Date(),
-        })
-        .where(eq(matches.id, current.id));
-      if (scoreChanged) {
-        broadcastScoreUpdate({
-          matchId: current.id,
-          homeScore: normalized.homeScore,
-          awayScore: normalized.awayScore,
-        });
-      }
-    }
-  } else {
-    const [inserted] = await db
-      .insert(matches)
-      .values({ ...normalized, updatedAt: new Date() })
-      .returning();
-
-    broadcastMatchCreated({ matchId: inserted.id, match: inserted });
+  if (
+    typeof normalized.externalId !== "string" ||
+    normalized.externalId.trim() === ""
+  ) {
+    throw new Error("Match externalId is required");
   }
+
+  if (
+    !(normalized.startTime instanceof Date) ||
+    !Number.isFinite(normalized.startTime.getTime())
+  ) {
+    throw new Error("Match startTime must be a valid Date");
+  }
+
+  const values = {
+    sport: normalized.sport,
+    homeTeam: normalized.homeTeam,
+    awayTeam: normalized.awayTeam,
+    homeScore: normalized.homeScore,
+    awayScore: normalized.awayScore,
+    homeWickets: normalized.homeWickets ?? null,
+    awayWickets: normalized.awayWickets ?? null,
+    status: normalized.status,
+    startTime: normalized.startTime,
+    endTime: normalized.endTime ?? null,
+    metadata: normalized.metadata ?? null,
+  };
+
+  const [inserted] = await db
+    .insert(matches)
+    .values({
+      ...values,
+      externalId: normalized.externalId,
+      updatedAt: new Date(),
+    })
+    .onConflictDoNothing({
+      target: matches.externalId,
+    })
+    .returning();
+
+  if (inserted) {
+    broadcastMatchCreated({
+      matchId: inserted.id,
+      match: inserted,
+    });
+    return;
+  }
+
+  // Compare against the database row, including null values.
+  const changed = or(
+    ...Object.entries(values).map(
+      ([key, value]) =>
+        sql`${matches[key]} IS DISTINCT FROM ${sql.param(value, matches[key])}`,
+    ),
+  );
+
+  const [updated] = await db
+    .update(matches)
+    .set({
+      ...values,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(matches.externalId, normalized.externalId), changed))
+    .returning();
+
+  if (!updated) return;
+
+  // Use the values actually saved by the database.
+  broadcastScoreUpdate({
+    matchId: updated.id,
+    homeScore: updated.homeScore,
+    awayScore: updated.awayScore,
+  });
 }
 
 // ─── Sync jobs ────────────────────────────────────────────────────────────────
