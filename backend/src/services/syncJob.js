@@ -28,6 +28,9 @@ async function upsertMatch(
     const scoreChanged =
       current.homeScore !== normalized.homeScore ||
       current.awayScore !== normalized.awayScore;
+    const wicketsChanged =
+      (current.homeWickets ?? null) !== (normalized.homeWickets ?? null) ||
+      (current.awayWickets ?? null) !== (normalized.awayWickets ?? null);
     const statusChanged = current.status !== normalized.status;
     const teamsChanged =
       current.homeTeam !== normalized.homeTeam ||
@@ -35,7 +38,13 @@ async function upsertMatch(
     const metadataChanged =
       JSON.stringify(current.metadata) !== JSON.stringify(normalized.metadata);
 
-    if (scoreChanged || statusChanged || teamsChanged || metadataChanged) {
+    if (
+      scoreChanged ||
+      wicketsChanged ||
+      statusChanged ||
+      teamsChanged ||
+      metadataChanged
+    ) {
       await db
         .update(matches)
         .set({
@@ -201,8 +210,6 @@ export function startSyncJob({ broadcastScoreUpdate, broadcastMatchCreated }) {
   syncFootballLive(...args);
   syncFootballSchedule(...args);
 
-
-  
   const cricketTimer = setInterval(
     () => syncCricket(...args),
     CRICKET_INTERVAL_MS,
