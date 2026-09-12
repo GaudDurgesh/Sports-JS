@@ -24,6 +24,7 @@ const context = vm.createContext({
   Date,
   normalizeFootballEvents,
   cacheWriters,
+  MAX_CACHE_ENTRIES: 200,
   footballGet(path) {
     return new Promise((resolve, reject) => {
       calls.push({ path, resolve, reject });
@@ -127,6 +128,42 @@ assert.equal(cacheWriters.size, 0);
 
 console.log("PASS: older response cannot overwrite newer cache");
 
+// Previous scenarios have finished; start with an empty test cache.
+assert.equal(inFlight.size, 0);
+assert.equal(cacheWriters.size, 0);
+cache.clear();
 
+async function cacheFixture(id) {
+  const request = fetchEvents(id, String(id), true);
+  calls.at(-1).resolve(payload);
+  await request;
+}
+
+// Fill all 200 slots.
+for (let id = 1000; id < 1200; id++) {
+  await cacheFixture(id);
+}
+
+assert.equal(cache.size, 200);
+assert.equal(cache.has(1000), true);
+assert.equal(cache.has(1199), true);
+
+// Refresh the oldest entry: it should become the newest-written entry.
+await cacheFixture(1000);
+
+assert.equal(cache.size, 200);
+assert.equal(cache.keys().next().value, 1001);
+
+// Adding entry 201 should remove 1001, while retaining refreshed 1000.
+await cacheFixture(1200);
+
+assert.equal(cache.size, 200);
+assert.equal(cache.has(1001), false);
+assert.equal(cache.has(1000), true);
+assert.equal(cache.has(1200), true);
+assert.equal(inFlight.size, 0);
+assert.equal(cacheWriters.size, 0);
+
+console.log("PASS: cache limit, refresh ordering and oldest-entry eviction");
 
 console.log("No real API requests or database connections were made.");

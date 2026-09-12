@@ -13,6 +13,7 @@ const cache = new Map();
 const CACHE_TTL_LIVE = 30_000; // 30s for live matches
 const CACHE_TTL_FINISHED = 6 * 60 * 60_000; // 6 hours
 const CACHE_TTL_UNAVAILABLE = 5 * 60_000; // 5 minutes
+const MAX_CACHE_ENTRIES = 200;
 const inFlight = new Map();
 const cacheWriters = new Map();
 
@@ -48,11 +49,21 @@ function fetchAndCacheEvents(matchId, footballId, isFinished) {
     const result = normalizeFootballEvents(data, matchId);
 
     if (cacheWriters.get(matchId) === token) {
-      cache.set(matchId, {
-        data: result,
-        cachedAt: Date.now(),
-        isFinished,
-      });
+  // Move a refreshed entry to the newest write position.
+  cache.delete(matchId);
+
+  cache.set(matchId, {
+    data: result,
+    cachedAt: Date.now(),
+    isFinished,
+  });
+
+  // Remove the oldest-written entries when the limit is exceeded.
+  while (cache.size > MAX_CACHE_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    cache.delete(oldestKey);
+  }
+
     }
 
     return result;
