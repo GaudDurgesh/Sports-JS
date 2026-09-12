@@ -145,49 +145,84 @@ async function cleanupStaleMatches() {
   }
 }
 
-async function syncCricket(broadcastScoreUpdate, broadcastMatchCreated) {
+const runningSyncJobs = new Set();
+
+async function runSyncJob(
+  name,
+  fetchMatches,
+  broadcastScoreUpdate,
+  broadcastMatchCreated,
+) {
+  if (runningSyncJobs.has(name)) {
+    console.log(`[sync:${name}] skipped: previous run still active`);
+    return;
+  }
+
+  runningSyncJobs.add(name);
+
   try {
-    const results = await fetchLiveCricketMatches();
-    console.log(`[sync:cricket] ${results.length} matches`);
-    await Promise.all(
-      results.map((m) =>
-        upsertMatch(m, broadcastScoreUpdate, broadcastMatchCreated),
+    const results = await fetchMatches();
+
+    if (!Array.isArray(results)) {
+      throw new Error("Provider returned an invalid match list");
+    }
+
+    const outcomes = await Promise.allSettled(
+      results.map((match) =>
+        upsertMatch(match, broadcastScoreUpdate, broadcastMatchCreated),
       ),
     );
+
+    const failures = outcomes.filter(
+      (outcome) => outcome.status === "rejected",
+    );
+
+    console.log(
+      `[sync:${name}] processed ${results.length} matches; ` +
+        `${failures.length} failed`,
+    );
+
+    if (failures.length > 0) {
+      console.error(
+        `[sync:${name}] first match failure:`,
+        failures[0].reason?.message ?? "Unknown error",
+      );
+    }
   } catch (err) {
-    console.error("[sync:cricket] failed:", err.message);
+    console.error(`[sync:${name}] failed:`, err.message);
+  } finally {
+    runningSyncJobs.delete(name);
   }
 }
 
+async function syncCricket(broadcastScoreUpdate, broadcastMatchCreated) {
+  return runSyncJob(
+    "cricket",
+    fetchLiveCricketMatches,
+    broadcastScoreUpdate,
+    broadcastMatchCreated,
+  );
+}
+
 async function syncFootballLive(broadcastScoreUpdate, broadcastMatchCreated) {
-  try {
-    const results = await fetchLiveFootballMatches();
-    console.log(`[sync:football-live] ${results.length} matches`);
-    await Promise.all(
-      results.map((m) =>
-        upsertMatch(m, broadcastScoreUpdate, broadcastMatchCreated),
-      ),
-    );
-  } catch (err) {
-    console.error("[sync:football-live] failed:", err.message);
-  }
+  return runSyncJob(
+    "football-live",
+    fetchLiveFootballMatches,
+    broadcastScoreUpdate,
+    broadcastMatchCreated,
+  );
 }
 
 async function syncFootballSchedule(
   broadcastScoreUpdate,
   broadcastMatchCreated,
 ) {
-  try {
-    const results = await fetchScheduledFootballMatches();
-    console.log(`[sync:football-schedule] ${results.length} matches`);
-    await Promise.all(
-      results.map((m) =>
-        upsertMatch(m, broadcastScoreUpdate, broadcastMatchCreated),
-      ),
-    );
-  } catch (err) {
-    console.error("[sync:football-schedule] failed:", err.message);
-  }
+  return runSyncJob(
+    "football-schedule",
+    fetchScheduledFootballMatches,
+    broadcastScoreUpdate,
+    broadcastMatchCreated,
+  );
 }
 
 // ─── Intervals ────────────────────────────────────────────────────────────────
