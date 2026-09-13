@@ -163,10 +163,20 @@ export function attachWebSocketServer(server) {
     broadcastToMatch(matchId, { type: "commentary", data: comment });
   }
 
-  function broadcastScoreUpdate(matchId, homeScore, awayScore) {
+  function broadcastScoreUpdate(update) {
+    const { matchId, homeScore, awayScore } = update;
+
+    if (!Number.isSafeInteger(matchId) || matchId <= 0) {
+      throw new Error("Score update requires a positive integer matchId");
+    }
+
     broadcastToMatch(matchId, {
       type: "score_update",
-      data: { matchId, homeScore, awayScore },
+      data: {
+        matchId,
+        homeScore,
+        awayScore,
+      },
     });
   }
 
