@@ -9,6 +9,7 @@ import { startSyncJob } from './services/syncJob.js';
 import { eventsRouter } from './routes/events.js'
 import { authRouter } from './routes/authRoute.js';
 import competitionsRouter from './routes/competitions.js';
+import { scorecardsRouter } from './routes/scorecards.js';
 import 'dotenv/config';
 
 const PORT = Number(process.env.PORT || 8000);
@@ -53,6 +54,7 @@ app.post('/matches/:id/events', blockPublicMatchWrite);
 app.use('/matches', matchRouter);
 app.use('/matches', commentaryRouter);
 app.use('/matches', eventsRouter);
+app.use('/matches', scorecardsRouter);
 app.use('/competitions', competitionsRouter);
 console.log('competitions router mounted');
 

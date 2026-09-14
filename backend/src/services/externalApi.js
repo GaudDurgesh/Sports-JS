@@ -181,6 +181,8 @@ function normalizeCricketMatch(matchInfo, matchScore) {
     startTime,
     endTime: status === "finished" ? startTime : null,
     metadata: {
+      providerState: matchInfo.state ?? null,
+      providerStatus: matchInfo.status ?? null,
       matchType: matchInfo.matchFormat?.toLowerCase() ?? null,
       venue: matchInfo.venueName ?? null,
       series: matchInfo.seriesName ?? null,

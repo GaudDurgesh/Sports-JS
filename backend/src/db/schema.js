@@ -37,12 +37,29 @@ export const matches = pgTable("matches", {
   metadata: jsonb("metadata"),
   externalId: text("external_id").unique(),
   providerUpdatedAt: timestamp("provider_updated_at", {
-  withTimezone: true,
-}),
+    withTimezone: true,
+  }),
 
   // Server-generated timestamps — plain timestamp is fine here
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const cricketScorecards = pgTable("cricket_scorecards", {
+  matchId: integer("match_id")
+    .primaryKey()
+    .references(() => matches.id)
+    .notNull(),
+
+  provider: text("provider").notNull(),
+  sourceExternalId: text("source_external_id").notNull(),
+
+  schemaVersion: integer("schema_version").default(1).notNull(),
+
+  rawData: jsonb("raw_data").notNull(),
+  data: jsonb("data").notNull(),
+
+  savedAt: timestamp("saved_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ─── Commentary ───────────────────────────────────────────────────────────────
